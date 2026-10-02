@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Price List Compare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: two upload panels side by side (stack on phones), then a summary strip and a filterable change table. */
+:root {
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --ink: #23201c;
+  --muted: #6d675f;
+  --line: #e2ddd5;
+  --accent: #2f5d62;      /* deep teal, like a dyed wool */
+  --accent-soft: #e3eeee;
+  --up: #b3401f;          /* price increase */
+  --up-soft: #f8e6df;
+  --down: #2e7d4f;        /* price decrease */
+  --down-soft: #e1f1e7;
+  --warn: #8a6a12;
+  --warn-soft: #f6efd9;
+  --f-display: "Fraunces", Georgia, serif;
+  --f-body: "Source Sans 3", system-ui, -apple-system, Segoe UI, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171a1a; --surface: #202424; --ink: #ece8e2; --muted: #a39d94; --line: #333837;
+    --accent: #7fb7bc; --accent-soft: #233334; --up: #f08a6a; --up-soft: #3a2621;
+    --down: #6fcf97; --down-soft: #1e3328; --warn: #e3c36a; --warn-soft: #353020;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171a1a; --surface: #202424; --ink: #ece8e2; --muted: #a39d94; --line: #333837;
+  --accent: #7fb7bc; --accent-soft: #233334; --up: #f08a6a; --up-soft: #3a2621;
+  --down: #6fcf97; --down-soft: #1e3328; --warn: #e3c36a; --warn-soft: #353020;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+img { max-width: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: grid; gap: 24px; }
+header h1 { font-family: var(--f-display); font-weight: 600; font-size: 1.9rem; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
+.eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; font-weight: 700; color: var(--muted); }
+
+.uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 720px) { .uploads { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.panel-head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 18px 14px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+.drop:hover, .drop.over, .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+.drop strong { color: var(--accent); }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.filename { font-family: var(--f-mono); font-size: .82rem; word-break: break-all; }
+.meta { color: var(--muted); font-size: .85rem; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+label.f { display: grid; gap: 4px; font-size: .8rem; font-weight: 600; color: var(--muted); }
+select { font: inherit; font-size: .9rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
+select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sample-note { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: .88rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+
+.summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (max-width: 900px) { .summary { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 460px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+.stat { all: unset; cursor: pointer; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; }
+.stat:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stat .n { font-family: var(--f-display); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: .78rem; color: var(--muted); font-weight: 600; }
+.stat[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.stat.up .n { color: var(--up); } .stat.down .n { color: var(--down); }
+
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.toolbar input[type=search] { font: inherit; font-size: .9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; min-width: 0; flex: 1 1 220px; max-width: 360px; }
+.btn { font: inherit; font-size: .88rem; font-weight: 600; border-radius: 6px; padding: 7px 12px; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); cursor: pointer; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.warnings { display: grid; gap: 6px; }
+.warnings div { background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 6px 10px; font-size: .86rem; }
+
+.table-box { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+th.num, td.num { text-align: right; }
+td.num, td.key { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: .85rem; }
+td.desc { white-space: normal; min-width: 180px; color: var(--muted); }
+tbody tr:last-child td { border-bottom: 0; }
+th .arrow { opacity: .7; }
+.pill { display: inline-block; font-size: .74rem; font-weight: 700; border-radius: 99px; padding: 1px 9px; }
+.pill.up { background: var(--up-soft); color: var(--up); }
+.pill.down { background: var(--down-soft); color: var(--down); }
+.pill.same { background: var(--bg); color: var(--muted); }
+.pill.new { background: var(--accent-soft); color: var(--accent); }
+.pill.gone { background: var(--warn-soft); color: var(--warn); }
+.c-up { color: var(--up); } .c-down { color: var(--down); }
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+.foot { color: var(--muted); font-size: .84rem; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: .88rem; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Boutique Rugs · Pricing</div>
+    <h1>Price List Compare</h1>
+    <p>Upload the previous price list and the current one. Rows are matched by item number (SKU), and every price change is listed below. Files stay in your browser and are never uploaded anywhere.</p>
+  </header>
+
+  <div class="sample-note" id="sampleNote">
+    <span>Showing example data so you can see how it works. Upload your own two files to replace it.</span>
+    <button class="btn ghost" id="clearSample" type="button">Clear example</button>
+  </div>
+
+  <section class="uploads">
+    <div class="panel" data-side="prev">
+      <div class="panel-head"><h2>Previous list</h2><span class="meta" data-role="rows"></span></div>
+      <label class="drop" data-role="drop">
+        <input type="file" id="file-prev" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods">
+        <div><strong>Choose a file</strong> or drop it here</div>
+        <div class="meta">CSV or Excel (.xlsx, .xls)</div>
+      </label>
+      <div class="filename" data-role="name"></div>
+      <div class="fields">
+        <label class="f">Sheet<select id="sheet-prev" data-role="sheet"></select></label>
+        <label class="f">Item number column<select id="key-prev" data-role="key"></select></label>
+        <label class="f">Price column<select id="price-prev" data-role="price"></select></label>
+      </div>
+    </div>
+    <div class="panel" data-side="curr">
+      <div class="panel-head"><h2>Current list</h2><span class="meta" data-role="rows"></span></div>
+      <label class="drop" data-role="drop">
+        <input type="file" id="file-curr" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods">
+        <div><strong>Choose a file</strong> or drop it here</div>
+        <div class="meta">CSV or Excel (.xlsx, .xls)</div>
+      </label>
+      <div class="filename" data-role="name"></div>
+      <div class="fields">
+        <label class="f">Sheet<select id="sheet-curr" data-role="sheet"></select></label>
+        <label class="f">Item number column<select id="key-curr" data-role="key"></select></label>
+        <label class="f">Price column<select id="price-curr" data-role="price"></select></label>
+      </div>
+    </div>
+  </section>
+
+  <section class="summary" id="summary"></section>
+  <div class="warnings" id="warnings"></div>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search item number or description">
+    <div class="actions">
+      <button class="btn" id="dlNew" type="button">Download new items CSV</button>
+      <button class="btn ghost" id="dlResults" type="button">Download this view CSV</button>
+      <button class="btn ghost" id="copyCsv" type="button">Copy this view</button>
+    </div>
+  </div>
+
+  <div class="table-box">
+    <table>
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div class="foot" id="foot"></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+let canDownload = true;
+const state = {
+  prev: null, curr: null,           // { name, sheets: {name: rows[][]}, sheet, headerRow, headers, key, price, desc }
+  filter: 'changed', search: '', sortKey: 'pct', sortDir: -1, rows: [], isSample: true
+};
+
+const KEY_RE = /^(sku|item|item\s*(no|#|number|code)|style|style\s*(no|#|number)|part\s*(no|#|number)|product\s*(code|id)|model|upc|vendor\s*sku|code)$/i;
+const KEY_LOOSE = /sku|item|style|part|upc|model|code/i;
+const PRICE_RE = /price|cost|map|msrp|wholesale|retail|amount|\$/i;
+const DESC_RE = /desc|name|title|collection/i;
+
+function parsePrice(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = String(v).trim();
+  const neg = /^\(.*\)$/.test(s);
+  s = s.replace(/[^0-9.,-]/g, '');
+  if (/,\d{2}$/.test(s) && !/\./.test(s)) s = s.replace(/\./g, '').replace(',', '.'); // 1.234,56
+  s = s.replace(/,/g, '');
+  if (s === '' || s === '-' || s === '.') return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : (neg ? -n : n);
+}
+const normKey = v => String(v ?? '').trim().toUpperCase();
+
+function detectHeaderRow(rows) {
+  let best = 0, bestScore = -1;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const r = rows[i] || [];
+    const text = r.filter(c => typeof c === 'string' && c.trim() && isNaN(parseFloat(c))).length;
+    const hits = r.filter(c => typeof c === 'string' && (KEY_LOOSE.test(c) || PRICE_RE.test(c))).length;
+    const score = text + hits * 3;
+    if (score > bestScore) { bestScore = score; best = i; }
+  }
+  return best;
+}
+
+function guessColumns(side) {
+  const h = side.headers;
+  const find = (re, skip = []) => h.findIndex((x, i) => !skip.includes(i) && re.test(String(x).trim()));
+  let key = find(KEY_RE); if (key < 0) key = find(KEY_LOOSE); if (key < 0) key = 0;
+  // Prefer a column literally called price, then cost/MAP/etc.
+  let price = find(/^(price|unit\s*price|new\s*price|current\s*price)$/i, [key]);
+  if (price < 0) price = find(PRICE_RE, [key]);
+  if (price < 0) {
+    // fall back to first mostly-numeric column
+    const body = side.sheets[side.sheet].slice(side.headerRow + 1, side.headerRow + 40);
+    price = h.findIndex((_, i) => i !== key && body.filter(r => parsePrice(r[i]) !== null).length > body.length * 0.6);
+    if (price < 0) price = Math.min(1, h.length - 1);
+  }
+  const desc = find(DESC_RE, [key, price]);
+  side.key = key; side.price = price; side.desc = desc;
+}
+
+function loadSheet(side, sheetName) {
+  side.sheet = sheetName;
+  const rows = side.sheets[sheetName];
+  side.headerRow = detectHeaderRow(rows);
+  const raw = rows[side.headerRow] || [];
+  const width = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  side.headers = Array.from({ length: width }, (_, i) => {
+    const v = raw[i]; return (v === undefined || v === null || String(v).trim() === '') ? `Column ${XLSX.utils.encode_col(i)}` : String(v).trim();
+  });
+  guessColumns(side);
+}
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(fr.error);
+    fr.onload = () => {
+      try {
+        const wb = XLSX.read(new Uint8Array(fr.result), { type: 'array', cellDates: true });
+        const sheets = {};
+        wb.SheetNames.forEach(n => { sheets[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }); });
+        const first = wb.SheetNames.find(n => sheets[n].length > 1) || wb.SheetNames[0];
+        const side = { name: file.name, sheets, sheetNames: wb.SheetNames };
+        loadSheet(side, first);
+        resolve(side);
+      } catch (e) { reject(e); }
+    };
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+function buildMap(side, warnings, label) {
+  const map = new Map();
+  const rows = side.sheets[side.sheet];
+  let dupes = 0, blankPrice = 0;
+  for (let i = side.headerRow + 1; i < rows.length; i++) {
+    const r = rows[i]; const k = normKey(r[side.key]);
+    if (!k) continue;
+    const p = parsePrice(r[side.price]);
+    if (p === null) blankPrice++;
+    if (map.has(k)) { dupes++; continue; }
+    map.set(k, { raw: r, key: String(r[side.key]).trim(), price: p, desc: side.desc >= 0 ? String(r[side.desc] ?? '').trim() : '' });
+  }
+  if (dupes) warnings.push(`${label} list has ${dupes} repeated item number${dupes > 1 ? 's' : ''}. The first row for each was used.`);
+  if (blankPrice) warnings.push(`${label} list has ${blankPrice} row${blankPrice > 1 ? 's' : ''} with no readable price in "${side.headers[side.price]}".`);
+  return map;
+}
+
+function compare() {
+  const warnings = [];
+  if (!state.prev || !state.curr) { state.rows = []; render(warnings); return; }
+  const a = buildMap(state.prev, warnings, 'Previous');
+  const b = buildMap(state.curr, warnings, 'Current');
+  const out = [];
+  for (const [k, pv] of a) {
+    const cv = b.get(k);
+    if (!cv) { out.push({ k, key: pv.key, desc: pv.desc, old: pv.price, now: null, status: 'gone' }); continue; }
+    let status = 'same';
+    if (pv.price !== null && cv.price !== null) {
+      const d = Math.round((cv.price - pv.price) * 100) / 100;
+      status = d > 0 ? 'up' : d < 0 ? 'down' : 'same';
+    } else if (pv.price !== cv.price) status = cv.price === null ? 'gone' : 'new';
+    out.push({ k, key: cv.key, desc: cv.desc || pv.desc, old: pv.price, now: cv.price, status });
+  }
+  for (const [k, cv] of b) if (!a.has(k)) out.push({ k, key: cv.key, desc: cv.desc, old: null, now: cv.price, status: 'new', raw: cv.raw });
+  out.forEach(r => {
+    r.diff = (r.old !== null && r.now !== null) ? r.now - r.old : null;
+    r.pct = (r.diff !== null && r.old) ? r.diff / r.old * 100 : null;
+  });
+  if (a.size && b.size && out.every(r => r.status === 'new' || r.status === 'gone'))
+    warnings.push('No item numbers matched between the two lists. Check that the item number columns are set correctly.');
+  state.rows = out;
+  render(warnings);
+}
+
+const money = v => v === null ? '—' : v.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const signed = v => v === null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const pctFmt = v => v === null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + '%';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const LABEL = { up: 'Increased', down: 'Decreased', same: 'Unchanged', new: 'New item', gone: 'Removed' };
+
+const FILTERS = [
+  ['changed', 'Price changed', r => r.status === 'up' || r.status === 'down', ''],
+  ['up', 'Increased', r => r.status === 'up', 'up'],
+  ['down', 'Decreased', r => r.status === 'down', 'down'],
+  ['same', 'Unchanged', r => r.status === 'same', ''],
+  ['new', 'New items', r => r.status === 'new', ''],
+  ['gone', 'Removed', r => r.status === 'gone', ''],
+];
+const COLS = [
+  ['key', 'Item number', ''], ['desc', 'Description', ''], ['old', 'Previous', 'num'], ['now', 'Current', 'num'],
+  ['diff', 'Change', 'num'], ['pct', 'Change %', 'num'], ['status', 'Status', '']
+];
+
+function visibleRows() {
+  const f = FILTERS.find(x => x[0] === state.filter)[2];
+  const q = state.search.trim().toLowerCase();
+  let rows = state.rows.filter(f);
+  if (q) rows = rows.filter(r => r.key.toLowerCase().includes(q) || (r.desc || '').toLowerCase().includes(q));
+  const k = state.sortKey, d = state.sortDir;
+  rows.sort((x, y) => {
+    let a = x[k], b = y[k];
+    if (k === 'pct' || k === 'diff') { a = a === null ? -Infinity : Math.abs(a); b = b === null ? -Infinity : Math.abs(b); }
+    if (a === null || a === undefined) return 1; if (b === null || b === undefined) return -1;
+    return (typeof a === 'number' ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true })) * d;
+  });
+  return rows;
+}
+
+function render(warnings) {
+  // summary
+  const sum = document.getElementById('summary');
+  sum.innerHTML = FILTERS.map(([id, label, fn, cls]) =>
+    `<button class="stat ${cls}" type="button" data-filter="${id}" aria-pressed="${state.filter === id}"><span class="n">${state.rows.filter(fn).length.toLocaleString()}</span><span class="l">${label}</span></button>`).join('');
+  if (warnings) document.getElementById('warnings').innerHTML = warnings.map(w => `<div>${esc(w)}</div>`).join('');
+  // header
+  const showDesc = state.rows.some(r => r.desc);
+  document.getElementById('thead').innerHTML = COLS.filter(c => c[0] !== 'desc' || showDesc).map(([k, l, cls]) =>
+    `<th class="${cls}" data-sort="${k}" scope="col">${l}${state.sortKey === k ? ` <span class="arrow">${state.sortDir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('');
+  // body
+  const rows = visibleRows();
+  const tb = document.getElementById('tbody');
+  const span = showDesc ? 7 : 6;
+  if (!state.prev || !state.curr) tb.innerHTML = `<tr><td class="empty" colspan="${span}">Upload both lists to see price changes.</td></tr>`;
+  else if (!rows.length) tb.innerHTML = `<tr><td class="empty" colspan="${span}">No items in this view.</td></tr>`;
+  else tb.innerHTML = rows.slice(0, 2000).map(r => {
+    const c = r.diff > 0 ? 'c-up' : r.diff < 0 ? 'c-down' : '';
+    return `<tr><td class="key">${esc(r.key)}</td>${showDesc ? `<td class="desc">${esc(r.desc || '')}</td>` : ''}<td class="num">${money(r.old)}</td><td class="num">${money(r.now)}</td><td class="num ${c}">${signed(r.diff)}</td><td class="num ${c}">${pctFmt(r.pct)}</td><td><span class="pill ${r.status}">${LABEL[r.status]}</span></td></tr>`;
+  }).join('');
+  document.getElementById('foot').textContent = state.prev && state.curr
+    ? `${rows.length.toLocaleString()} item${rows.length === 1 ? '' : 's'} shown${rows.length > 2000 ? ' (first 2,000 in the table; Copy includes all)' : ''}. Comparing "${state.prev.headers[state.prev.price]}" in ${state.prev.name} with "${state.curr.headers[state.curr.price]}" in ${state.curr.name}.`
+    : '';
+  document.getElementById('copyCsv').disabled = !rows.length;
+  document.getElementById('dlResults').disabled = !rows.length;
+  const nNew = state.rows.filter(r => r.status === 'new').length;
+  const dlNew = document.getElementById('dlNew');
+  dlNew.disabled = !nNew;
+  dlNew.textContent = `${canDownload ? 'Download' : 'Copy'} new items CSV (${nNew.toLocaleString()})`;
+}
+
+function fillPanel(sideName) {
+  const panel = document.querySelector(`.panel[data-side="${sideName}"]`);
+  const side = state[sideName];
+  const q = r => panel.querySelector(`[data-role="${r}"]`);
+  q('name').textContent = side ? side.name : 'No file yet';
+  const opts = (sel, list, val) => { sel.innerHTML = list.map((t, i) => `<option value="${i}">${esc(t)}</option>`).join(''); sel.value = val; sel.disabled = !side; };
+  if (!side) { ['sheet', 'key', 'price'].forEach(r => { q(r).innerHTML = ''; q(r).disabled = true; }); q('rows').textContent = ''; return; }
+  opts(q('sheet'), side.sheetNames, side.sheetNames.indexOf(side.sheet));
+  q('sheet').disabled = side.sheetNames.length < 2;
+  opts(q('key'), side.headers, side.key);
+  opts(q('price'), side.headers, side.price);
+  const n = side.sheets[side.sheet].length - side.headerRow - 1;
+  q('rows').textContent = `${n.toLocaleString()} rows`;
+}
+
+function endSample() {
+  if (!state.isSample) return;
+  state.isSample = false;
+  document.getElementById('sampleNote').hidden = true;
+}
+
+document.querySelectorAll('.panel').forEach(panel => {
+  const sideName = panel.dataset.side;
+  const input = panel.querySelector('input[type=file]');
+  const drop = panel.querySelector('[data-role="drop"]');
+  const take = async file => {
+    if (!file) return;
+    try {
+      if (state.isSample) { endSample(); state.prev = state.prev?.isSample ? null : state.prev; state.curr = state.curr?.isSample ? null : state.curr; fillPanel('prev'); fillPanel('curr'); }
+      state[sideName] = await readFile(file);
+      fillPanel(sideName); compare();
+    } catch (e) {
+      toast(`Couldn't read ${file.name}. Save it as .xlsx or .csv and try again.`);
+    }
+  };
+  input.addEventListener('change', () => { take(input.files[0]); input.value = ''; });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files[0]); });
+  panel.querySelector('[data-role="sheet"]').addEventListener('change', e => {
+    const side = state[sideName]; loadSheet(side, side.sheetNames[+e.target.value]); fillPanel(sideName); compare();
+  });
+  panel.querySelector('[data-role="key"]').addEventListener('change', e => { state[sideName].key = +e.target.value; compare(); });
+  panel.querySelector('[data-role="price"]').addEventListener('change', e => { state[sideName].price = +e.target.value; compare(); });
+});
+
+document.getElementById('summary').addEventListener('click', e => {
+  const b = e.target.closest('[data-filter]'); if (!b) return;
+  state.filter = b.dataset.filter; render();
+});
+document.getElementById('thead').addEventListener('click', e => {
+  const th = e.target.closest('[data-sort]'); if (!th) return;
+  const k = th.dataset.sort;
+  if (state.sortKey === k) state.sortDir *= -1; else { state.sortKey = k; state.sortDir = ['diff', 'pct'].includes(k) ? -1 : 1; }
+  render();
+});
+document.getElementById('search').addEventListener('input', e => { state.search = e.target.value; render(); });
+document.getElementById('clearSample').addEventListener('click', () => {
+  endSample(); state.prev = state.curr = null; state.rows = []; fillPanel('prev'); fillPanel('curr'); render([]);
+});
+
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3200);
+}
+const csvCell = v => {
+  if (v instanceof Date) v = v.toISOString().slice(0, 10);
+  v = v === null || v === undefined ? '' : String(v);
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
+function viewCsv() {
+  const num = v => v === null ? '' : (Math.round(v * 100) / 100).toFixed(2);
+  const lines = [['Item number', 'Description', 'Previous', 'Current', 'Change', 'Change %', 'Status'].join(',')];
+  visibleRows().forEach(r => lines.push([csvCell(r.key), csvCell(r.desc || ''), num(r.old), num(r.now), num(r.diff), r.pct === null ? '' : r.pct.toFixed(2), LABEL[r.status]].join(',')));
+  return { text: lines.join('\r\n'), count: lines.length - 1 };
+}
+// New items keep every column exactly as it appears in the current list.
+function newItemsCsv() {
+  const side = state.curr;
+  const lines = [side.headers.map(csvCell).join(',')];
+  state.rows.filter(r => r.status === 'new')
+    .sort((x, y) => x.key.localeCompare(y.key, undefined, { numeric: true }))
+    .forEach(r => lines.push(side.headers.map((_, i) => csvCell(r.raw[i])).join(',')));
+  return { text: lines.join('\r\n'), count: lines.length - 1 };
+}
+function copyText(text, count) {
+  navigator.clipboard.writeText(text).then(() => toast(`Copied ${count} rows. Paste into Excel or Google Sheets.`), () => {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('Copied. Paste into Excel or Google Sheets.'); } catch { toast('Copy was blocked by the browser.'); }
+    ta.remove();
+  });
+}
+let downloads = null;
+async function saveCsv(filename, { text, count }) {
+  if (!downloads) { copyText(text, count); return; }
+  try {
+    // BOM so Excel opens accented characters correctly
+    await downloads.save({ filename, data: '﻿' + text });
+    toast(`Downloaded ${count} rows as ${filename}.`);
+  } catch (e) {
+    if (e && e.code === 'declined') return;
+    if (e && e.code === 'rate_limited') { toast('A save is already waiting for your answer.'); return; }
+    copyText(text, count);
+  }
+}
+const stamp = () => new Date().toISOString().slice(0, 10);
+const baseName = n => n.replace(/\.[^.]+$/, '');
+document.getElementById('copyCsv').addEventListener('click', () => { const c = viewCsv(); copyText(c.text, c.count); });
+document.getElementById('dlResults').addEventListener('click', () => saveCsv(`price-changes-${state.filter}-${stamp()}.csv`, viewCsv()));
+document.getElementById('dlNew').addEventListener('click', () => saveCsv(`new-items-${baseName(state.curr.name)}-${stamp()}.csv`, newItemsCsv()));
+(async () => {
+  // Standalone hosting: save files with a normal browser download.
+  downloads = { save: async ({ filename, data }) => {
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { status: 'saved' };
+  } };
+  if (!downloads) {
+    canDownload = false;
+    document.getElementById('dlResults').hidden = true;
+    render();
+  }
+})();
+
+// Example data (clearly labelled on the page) so the first view shows what the tool does.
+function sampleSide(name, rows) {
+  const side = { name, sheets: { Sheet1: rows }, sheetNames: ['Sheet1'], isSample: true };
+  loadSheet(side, 'Sheet1'); return side;
+}
+const H = ['SKU', 'Description', 'Size', 'MAP Price'];
+state.prev = sampleSide('example-previous.xlsx', [H,
+  ['BRC-1001', 'Hartley Wool Area Rug', "5' x 8'", 389.00], ['BRC-1002', 'Hartley Wool Area Rug', "8' x 10'", 649.00],
+  ['BRC-2040', 'Selene Jute Runner', "2'6\" x 8'", 119.00], ['BRC-2041', 'Selene Jute Area Rug', "9' x 12'", 729.00],
+  ['BRC-3310', 'Okan Vintage Washable', "5' x 7'", 159.00], ['BRC-3311', 'Okan Vintage Washable', "7'10\" x 10'", 279.00],
+  ['BRC-4120', 'Marlo Shag', "6' x 9'", 219.00], ['BRC-5005', 'Teodor Outdoor', "5'3\" x 7'3\"", 99.00]]);
+state.curr = sampleSide('example-current.xlsx', [H,
+  ['BRC-1001', 'Hartley Wool Area Rug', "5' x 8'", 419.00], ['BRC-1002', 'Hartley Wool Area Rug', "8' x 10'", 699.00],
+  ['BRC-2040', 'Selene Jute Runner', "2'6\" x 8'", 119.00], ['BRC-2041', 'Selene Jute Area Rug', "9' x 12'", 689.00],
+  ['BRC-3310', 'Okan Vintage Washable', "5' x 7'", 149.00], ['BRC-3311', 'Okan Vintage Washable', "7'10\" x 10'", 299.00],
+  ['BRC-4120', 'Marlo Shag', "6' x 9'", 219.00], ['BRC-6200', 'Aveline Hand-Tufted', "8' x 10'", 899.00]]);
+fillPanel('prev'); fillPanel('curr'); compare();
+</script>
+
+</body>
+</html>

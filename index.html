@@ -10,7 +10,8 @@
 <style>
 /* Layout: two upload panels side by side (stack on phones), then a summary strip and a filterable change table. */
 :root {
-  --bg: #f7f6f3;
+  --bg: #ffffff;
+  --chip: #f2f1ee;
   --surface: #ffffff;
   --ink: #23201c;
   --muted: #6d675f;
@@ -27,25 +28,11 @@
   --f-body: "Source Sans 3", system-ui, -apple-system, Segoe UI, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #171a1a; --surface: #202424; --ink: #ece8e2; --muted: #a39d94; --line: #333837;
-    --accent: #7fb7bc; --accent-soft: #233334; --up: #f08a6a; --up-soft: #3a2621;
-    --down: #6fcf97; --down-soft: #1e3328; --warn: #e3c36a; --warn-soft: #353020;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #171a1a; --surface: #202424; --ink: #ece8e2; --muted: #a39d94; --line: #333837;
-  --accent: #7fb7bc; --accent-soft: #233334; --up: #f08a6a; --up-soft: #3a2621;
-  --down: #6fcf97; --down-soft: #1e3328; --warn: #e3c36a; --warn-soft: #353020;
-  color-scheme: dark;
-}
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; }
 img { max-width: 100%; }
-body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+body { background: var(--bg); color-scheme: light; color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: grid; gap: 24px; }
 header h1 { font-family: var(--f-display); font-weight: 600; font-size: 1.9rem; margin: 0; text-wrap: balance; }
 header p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
@@ -100,7 +87,7 @@ th .arrow { opacity: .7; }
 .pill { display: inline-block; font-size: .74rem; font-weight: 700; border-radius: 99px; padding: 1px 9px; }
 .pill.up { background: var(--up-soft); color: var(--up); }
 .pill.down { background: var(--down-soft); color: var(--down); }
-.pill.same { background: var(--bg); color: var(--muted); }
+.pill.same { background: var(--chip); color: var(--muted); }
 .pill.new { background: var(--accent-soft); color: var(--accent); }
 .pill.gone { background: var(--warn-soft); color: var(--warn); }
 .c-up { color: var(--up); } .c-down { color: var(--down); }
